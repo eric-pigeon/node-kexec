@@ -8,7 +8,7 @@
 #include <fcntl.h>
 
 static void invalidArgs(Napi::Env env) {
-    Napi::TypeError::New(env, "invalid arguments: expected string or string, Array<string>").ThrowAsJavaScriptException();
+    Napi::TypeError::New(env, "invalid arguments: expected string or string, Array<string>, or string, Array<string>, Array<string>").ThrowAsJavaScriptException();
 }
 
 static void operationError(Napi::Env env, const char *operation, int code) {
@@ -20,7 +20,7 @@ static void operationError(Napi::Env env, const char *operation, int code) {
 void Kexec(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
 
-    if (info.Length() < 1 || info.Length() > 2 || !info[0].IsString()) {
+    if (info.Length() < 1 || info.Length() > 3 || !info[0].IsString()) {
         invalidArgs(env);
         return;
     }
@@ -74,7 +74,31 @@ void Kexec(const Napi::CallbackInfo& info) {
         }
     }
 
-    int execvpErrCode = execvp(argv[0], argv);
+    int execvpErrCode;
+    if (3 == info.Length()) {
+        Napi::Array envFromJS = info[2].As<Napi::Array>();
+        const int numEnv = envFromJS.Length();
+
+        char **env;
+
+        std::vector<std::string> strEnv(numEnv);
+        envv = new char*[numEnv + 1];
+        for (int envIdx = 0; envIdx < numEnv; ++envIdx) {
+            Napi::Value env = envFromJS[envIdx];
+            if (!arg.IsString()) {
+                invalidArgs(env);
+                return;
+            }
+            strEnv[envIdx] = env.As<Napi::String>().Utf8Value();
+            envv[envIdx + 1] = const_cast<char *>(strEnv[envIdx].c_str());
+        }
+
+        envv[numEnv + 1] = NULL;
+
+        execvpErrCode = execvpe(argv[0], argv, envv);
+    } else {
+        execvpErrCode = execvp(argv[0], argv);
+    }
 
     // Because of the exec, we only get here if there's a failure.
     delete [] argv;
